@@ -1,0 +1,104 @@
+#define BLYNK_TEMPLATE_ID "TMPL3lgvhpiD3"
+#define BLYNK_TEMPLATE_NAME "Automated Water tank"
+#define BLYNK_AUTH_TOKEN "X_X2UDw5oiOMqDW2it6-tvDjJMBVoNOf"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+
+char ssid[] = "Likitha";
+char pass[] = "123456789";
+
+#define TRIG_PIN 5
+#define ECHO_PIN 18
+#define RED_PIN 25
+#define GREEN_PIN 26
+#define BLUE_PIN 27
+#define BUZZER 14
+
+const float TANK_HEIGHT = 30.0;   // cm, sensor to tank bottom
+
+BlynkTimer timer;
+
+// Function to set RGB LED color
+void setRGBColor(int red, int green, int blue) {
+  analogWrite(RED_PIN, red);
+  analogWrite(GREEN_PIN, green);
+  analogWrite(BLUE_PIN, blue);
+}
+
+// Non-blocking-ish double beep (short blocking delay, fine at 1s interval)
+void doubleBeep() {
+  digitalWrite(BUZZER, HIGH);
+  delay(150);
+  digitalWrite(BUZZER, LOW);
+  delay(150);
+  digitalWrite(BUZZER, HIGH);
+  delay(150);
+  digitalWrite(BUZZER, LOW);
+}
+
+float getDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  return (duration * 0.0343) / 2.0;
+}
+
+void sendLevel() {
+  float distance = getDistance();
+  float level = ((TANK_HEIGHT - distance) / TANK_HEIGHT) * 100.0;
+  level = constrain(level, 0, 100);
+
+  String status;
+  digitalWrite(BUZZER, LOW);
+  int motorStatus = 0; // 0 = OFF, 1 = ON (for Blynk LED widget V2)
+
+  if (level <= 30) {
+    status = "LOW";
+    setRGBColor(255, 0, 0);      // RED 
+    motorStatus = 1;              // Motor ON to refill
+  } else if (level <= 70) {
+    status = "MEDIUM";
+    setRGBColor(0, 0, 255);    // YELLOW
+    motorStatus = 1;              // Still filling
+  } else if (level < 95) {
+    status = "FULL";
+    setRGBColor(0, 255, 0);      // GREEN
+    motorStatus = 0;              // Motor OFF, tank sufficiently full
+    doubleBeep();                 // 2 beeps at 100%
+  }
+
+  // Update Blynk
+  Blynk.virtualWrite(V0, (int)level);     // Gauge widget - water level
+  Blynk.virtualWrite(V1, status);         // Label widget - tank status
+  Blynk.virtualWrite(V2, motorStatus);    // LED widget - motor status
+
+  Serial.print("Level: ");
+  Serial.print(level);
+  Serial.print(" % | Status: ");
+  Serial.println(status);
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(RED_PIN, OUTPUT);
+  pinMode(GREEN_PIN, OUTPUT);
+  pinMode(BLUE_PIN, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+
+  // Initialize RGB LED (OFF)
+  setRGBColor(0, 0, 0);
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+  timer.setInterval(1000L, sendLevel);  // update every 1 second
+}
+
+void loop() {
+  Blynk.run();
+  timer.run();
+}
